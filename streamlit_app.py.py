@@ -17,7 +17,7 @@ if planned_file and actual_file:
     df_planned = pd.read_excel(planned_file)
     df_actual = pd.read_excel(actual_file)
 
-    # Rename columns to match expected names
+    # Rename to match expected names
     df_planned = df_planned.rename(columns={
         "Planned Start Date": "Start_Planned",
         "Planned End Date": "End_Planned"
@@ -29,11 +29,6 @@ if planned_file and actual_file:
     })
 
     if st.button("Analyze Project"):
+
         # Merge by Task
-        merged = df_planned.merge(df_actual, on="Task", suffixes=("_Planned", "_Actual"))
-
-        # Convert to datetime
-        merged["Start_Planned"] = pd.to_datetime(merged["Start_Planned"])
-        merged["End_Planned"] = pd.to_datetime(merged["End_Planned"])
-        merged["Start_Actual"] =_]()
-
+        merged = df_pla_
