@@ -1,80 +1,78 @@
-import streamlit as st 
+import streamlit as st
 import pandas as pd
 import plotly.express as px
 from io import BytesIO
 from reportlab.platypus import SimpleDocTemplate, Paragraph
 from reportlab.lib.styles import getSampleStyleSheet
-from difflib import get_close_matches
 
 st.title("AI Construction Timeline Analyzer")
 
 planned_file = st.file_uploader("Upload Planned Timeline", type=["xlsx"])
 actual_file = st.file_uploader("Upload Actual Progress", type=["xlsx"])
 
-# Function to detect the "Task" column robustly
+# Function to detect Task column robustly
 def find_task_column(df):
-    candidates = df.columns.tolist()
-    match = get_close_matches('task', [c.lower().strip() for c in candidates], n=1, cutoff=0.6)
-    if not match:
-        raise ValueError("No column matching 'Task' found in DataFrame")
-    for col in candidates:
-        if col.lower().strip() == match[0]:
+    for col in df.columns:
+        # Check if 'task' is in column name (case-insensitive)
+        if 'task' in col.lower():
             return col
-    return None
+    raise ValueError("No column matching 'Task' found in DataFrame")
 
-# Function to detect "Duration" column robustly
+# Function to detect Duration column robustly
 def find_duration_column(df):
-    candidates = df.columns.tolist()
-    match = get_close_matches('duration', [c.lower().replace(" ", "") for c in candidates], n=1, cutoff=0.6)
-    if not match:
-        return None
-    for col in candidates:
-        if col.lower().replace(" ", "") == match[0]:
+    for col in df.columns:
+        name = col.lower().replace(" ", "")
+        if "duration" in name:
             return col
     return None
 
 if planned_file and actual_file:
+    # Load Excel files
     df_planned = pd.read_excel(planned_file)
     df_actual = pd.read_excel(actual_file)
 
-    # Strip spaces and lowercase column names for consistency
-    df_planned.columns = df_planned.columns.str.strip().str.lower()
-    df_actual.columns = df_actual.columns.str.strip().str.lower()
+    # Clean column names: strip spaces, remove non-printable characters, lowercase
+    def clean_columns(df):
+        df.columns = (
+            df.columns
+            .str.strip()
+            .str.replace(r'\s+', ' ', regex=True)
+            .str.replace(r'\xa0','', regex=True)
+            .str.lower()
+        )
+        return df
+
+    df_planned = clean_columns(df_planned)
+    df_actual = clean_columns(df_actual)
 
     # Detect Task columns
     task_col_planned = find_task_column(df_planned)
     task_col_actual = find_task_column(df_actual)
 
-    # Clean Task values (remove extra spaces)
-    df_planned[task_col_planned] = df_planned[task_col_planned].str.strip()
-    df_actual[task_col_actual] = df_actual[task_col_actual].str.strip()
+    # Strip spaces from Task values
+    df_planned[task_col_planned] = df_planned[task_col_planned].astype(str).str.strip()
+    df_actual[task_col_actual] = df_actual[task_col_actual].astype(str).str.strip()
 
-    # Detect and standardize Duration column
+    # Detect and rename Duration column
     duration_col_planned = find_duration_column(df_planned)
     duration_col_actual = find_duration_column(df_actual)
-
     if duration_col_planned:
         df_planned = df_planned.rename(columns={duration_col_planned: "duration_weeks"})
     if duration_col_actual:
         df_actual = df_actual.rename(columns={duration_col_actual: "duration_weeks"})
 
-    # Rename date columns consistently if they exist
-    rename_planned = {}
+    # Rename date columns consistently
     if "planned start date" in df_planned.columns:
-        rename_planned["planned start date"] = "start_planned"
+        df_planned = df_planned.rename(columns={"planned start date": "start_planned"})
     if "planned end date" in df_planned.columns:
-        rename_planned["planned end date"] = "end_planned"
-    df_planned = df_planned.rename(columns=rename_planned)
-
-    rename_actual = {}
+        df_planned = df_planned.rename(columns={"planned end date": "end_planned"})
     if "actual start date" in df_actual.columns:
-        rename_actual["actual start date"] = "start_actual"
+        df_actual = df_actual.rename(columns={"actual start date": "start_actual"})
     if "actual end date" in df_actual.columns:
-        rename_actual["actual end date"] = "end_actual"
-    df_actual = df_actual.rename(columns=rename_actual)
+        df_actual = df_actual.rename(columns={"actual end date": "end_actual"})
 
     if st.button("Analyze"):
-        # Merge on Task column safely
+        # Merge Planned and Actual safely
         merged = df_planned.merge(
             df_actual,
             left_on=task_col_planned,
@@ -82,12 +80,12 @@ if planned_file and actual_file:
             how="outer"
         )
 
-        # Convert date columns to datetime safely
+        # Convert dates safely
         for col in ["start_planned", "end_planned", "start_actual", "end_actual"]:
             if col in merged.columns:
                 merged[col] = pd.to_datetime(merged[col], errors="coerce", dayfirst=True)
 
-        # Calculate delays if both end dates exist
+        # Calculate delays
         if "end_planned" in merged.columns and "end_actual" in merged.columns:
             merged["DelayDays"] = (merged["end_actual"] - merged["end_planned"]).dt.days
         else:
@@ -101,7 +99,7 @@ if planned_file and actual_file:
         st.subheader("Delay Table")
         st.dataframe(merged)
 
-        # Prepare Gantt chart only if date columns exist
+        # Prepare Gantt chart
         gantt_rows = []
         if "start_planned" in merged.columns and "end_planned" in merged.columns:
             gantt_rows.append(pd.DataFrame({
@@ -149,4 +147,3 @@ if planned_file and actual_file:
             Paragraph(insights.replace("\n", "<br/>"), styles["Normal"])
         ])
         st.download_button("Download Report", pdf_buffer, "report.pdf")
-
